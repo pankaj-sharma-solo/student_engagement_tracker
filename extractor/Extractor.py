@@ -1,11 +1,15 @@
 import cv2
 import numpy as np
+from tensorflow.keras.models import load_model, model_from_json
+from tensorflow.keras.preprocessing.image import img_to_array
 
 
 class Extractor:
     def __init__(self, cascadeClassifierPath: str = None, videoPath: str = None):
         self.faceCascade = None
         self.videoCapture = None
+        self.model = model_from_json(open("./static/model/model.json", "r").read())
+        self.model.load_weights("./static/model/model.h5")
 
     def __enter__(self):
         self.faceCascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
@@ -49,7 +53,7 @@ class Extractor:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         faces = self.faceCascade.detectMultiScale(
             gray,
-            scaleFactor=1.1,
+            scaleFactor=1.3,
             minNeighbors=5,
             minSize=(30, 30),
             flags=cv2.CASCADE_SCALE_IMAGE
@@ -57,6 +61,20 @@ class Extractor:
         face_frame = None
         for (x, y, w, h) in faces:
             cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            roi_gray = gray[y - 5:y + h + 5, x - 5:x + w + 5]
+            roi_gray = cv2.resize(roi_gray, (48, 48))
+            image_pixels = img_to_array(roi_gray)
+            image_pixels = np.expand_dims(image_pixels, axis=0)
+            image_pixels /= 255
+            predictions = self.model.predict(image_pixels)
+            max_index = np.argmax(predictions[0])
+            emotion_detection = ('angry', 'disgust', 'fear', 'happy', 'sad', 'surprise', 'neutral')
+            emotion_prediction = emotion_detection[max_index]
+            cv2.putText(frame, "Sentiment: {}".format(emotion_prediction), (0, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (10, 10, 255), 2)
+            lable_violation = 'Confidence: {}'.format(str(np.round(np.max(predictions[0]) * 100, 1)) + "%")
+            # violation_text_dimension = cv2.getTextSize(lable_violation, FONT, FONT_SCALE, FONT_THICKNESS)[0]
+            # violation_x_axis = int(res.shape[1] - violation_text_dimension[0])
+            cv2.putText(frame, lable_violation, (60, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (10, 10, 255), 2)
             face_frame = frame[y:y + h, x:x + w]
         return face_frame
 
@@ -67,7 +85,7 @@ class Extractor:
         detector_params.maxArea = 1500
         detector = cv2.SimpleBlobDetector_create(detector_params)
         gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        _, img = cv2.threshold(gray_frame, 42, 255, cv2.THRESH_BINARY)
+        _, img = cv2.threshold(gray_frame, 45, 255, cv2.THRESH_BINARY)
         img = cv2.erode(img, None, iterations=2)
         img = cv2.dilate(img, None, iterations=4)
         img = cv2.medianBlur(img, 5)
@@ -94,7 +112,3 @@ class Extractor:
         eye = eye[eb_height:height, 0:width]
         return eye
 
-
-# if __name__ == '__main__':
-#     with Extractor() as fe:
-#         fe.facialFeatureExtractor()
